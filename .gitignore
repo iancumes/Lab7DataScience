@@ -1,0 +1,12 @@
+PLAN_LAB7.md
+PROGRESO_LAB7.md
+data/raw/
+data/dictionaries/
+data/processed/
+artifacts/
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+*.html
+.venv/
+.playwright-cli/

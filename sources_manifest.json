@@ -1,0 +1,153 @@
+{
+  "fuente": "https://www.ine.gob.gt/encuesta-nacional-de-empleo-e-ingresos/",
+  "nota": "El enlace de diccionario 2026T1 figura como 2023 en el texto de la página; verificar contenido.",
+  "esperado": {
+    "2025T1": {
+      "filas": 51588,
+      "columnas": 270
+    },
+    "2025T2": {
+      "filas": 51167,
+      "columnas": 270
+    },
+    "2025T3": {
+      "filas": 51583,
+      "columnas": 270
+    },
+    "2025T4": {
+      "filas": 49338,
+      "columnas": 302
+    },
+    "2026T1": {
+      "filas": 49843,
+      "columnas": 270
+    }
+  },
+  "archivos": [
+    {
+      "periodo": "2025T1",
+      "tipo": "diccionario",
+      "archivo": "data/dictionaries/2025T1_diccionario.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2025/11/Diccionario_Personas_ENEIC_I-2025.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:10:24+00:00",
+      "sha256": "df14f9572d944f946c5519d7120892d7b04042d277f807c0a7116ff14dc2de33",
+      "bytes": 73967,
+      "filas_observadas": 2467,
+      "columnas_observadas": 6,
+      "hoja": "Dicc Personas",
+      "encabezado_inicial": "Personas_ENEIC_I 2025"
+    },
+    {
+      "periodo": "2025T1",
+      "tipo": "personas",
+      "archivo": "data/raw/2025T1_personas.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2026/01/Personas_ENEIC_T1_2025.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:10:26+00:00",
+      "sha256": "42cc1564b995f4da19322b1e4bca7a74db38053f85eb411ec9ac8b7907e843f9",
+      "bytes": 47749546,
+      "filas_observadas": 51588,
+      "columnas_observadas": 270,
+      "hoja": "Personas_ENEIC_T1_2025"
+    },
+    {
+      "periodo": "2025T2",
+      "tipo": "diccionario",
+      "archivo": "data/dictionaries/2025T2_diccionario.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2025/11/Diccionario_Personas_ENEIC_II-2025.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:10:25+00:00",
+      "sha256": "b4414613392697baa4d2b251ba8ba9a23e62086c4567b104836109af1135f51d",
+      "bytes": 73969,
+      "filas_observadas": 2467,
+      "columnas_observadas": 6,
+      "hoja": "Dicc Personas",
+      "encabezado_inicial": "Personas_ENEIC_II 2025"
+    },
+    {
+      "periodo": "2025T2",
+      "tipo": "personas",
+      "archivo": "data/raw/2025T2_personas.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2026/01/Personas-ENEIC-T2-2025.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:09:25+00:00",
+      "sha256": "73b689d36e0e354a641d5951bca06c834495d8c9561e66a2c07ee1f2c27be2be",
+      "bytes": 16905555,
+      "filas_observadas": 51167,
+      "columnas_observadas": 270,
+      "hoja": "Personas ENEIC T2-2025"
+    },
+    {
+      "periodo": "2025T3",
+      "tipo": "diccionario",
+      "archivo": "data/dictionaries/2025T3_diccionario.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2026/05/Diccionario-Personas-ENEIC-III-2025.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:10:26+00:00",
+      "sha256": "6a86e9c52816c0fa74e4719b58113ebb84b742f7cb2d681952d03f53a6aed63e",
+      "bytes": 60951,
+      "filas_observadas": 1948,
+      "columnas_observadas": 6,
+      "hoja": "Dicc Personas",
+      "encabezado_inicial": "Personas_ENEIC_III 2025"
+    },
+    {
+      "periodo": "2025T3",
+      "tipo": "personas",
+      "archivo": "data/raw/2025T3_personas.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2026/05/Base-de-datos-Personas-ENEIC-III-2025.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:10:07+00:00",
+      "sha256": "5c8cb5e37e91ee1e51fe3b8b44995f561b7bb1c3da3c1f58263ca40c1f1b8e4d",
+      "bytes": 47601956,
+      "filas_observadas": 51583,
+      "columnas_observadas": 270,
+      "hoja": "Personas ENEIC T3-2025"
+    },
+    {
+      "periodo": "2025T4",
+      "tipo": "diccionario",
+      "archivo": "data/dictionaries/2025T4_diccionario.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2026/06/Diccionario-Personas-ENEIC-IV-2025.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:10:26+00:00",
+      "sha256": "3336445f9e247f592b4f58415fbfa47080926000558b6f7f8c274964fce47abe",
+      "bytes": 72430,
+      "filas_observadas": 1950,
+      "columnas_observadas": 5,
+      "hoja": "Personas_ENEIC_IV 2025",
+      "encabezado_inicial": "Personas_ENEIC_IV 2025"
+    },
+    {
+      "periodo": "2025T4",
+      "tipo": "personas",
+      "archivo": "data/raw/2025T4_personas.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2026/06/Base-de-datos-Personas-ENEIC-IV-2025.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:10:38+00:00",
+      "sha256": "123049f9adfbcbcd026a850082b99cff38f549f75e972d69971b08754e7214d1",
+      "bytes": 51329132,
+      "filas_observadas": 49338,
+      "columnas_observadas": 302,
+      "hoja": "Base de datos Personas ENEIC IV"
+    },
+    {
+      "periodo": "2026T1",
+      "tipo": "diccionario",
+      "archivo": "data/dictionaries/2026T1_diccionario.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2026/09/Diccionario-Personas-ENEIC-I-2026.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:10:27+00:00",
+      "sha256": "3a1c4eda7b4dd8e4252ae03fe3aca1b2794b93dc95a4654f9a44f8a12d3afd5a",
+      "bytes": 60935,
+      "filas_observadas": 1948,
+      "columnas_observadas": 6,
+      "hoja": "Dicc Personas",
+      "encabezado_inicial": "Personas_ENEIC_I 2026"
+    },
+    {
+      "periodo": "2026T1",
+      "tipo": "personas",
+      "archivo": "data/raw/2026T1_personas.xlsx",
+      "url": "https://www.ine.gob.gt/wp-content/uploads/2026/09/Base-de-datos-Personas-ENEIC-I-2026.xlsx",
+      "fecha_descarga_utc": "2026-09-24T22:10:23+00:00",
+      "sha256": "988cfd00f48747b61f439fef59f6f03c989276d47dcb08ee9442b48d5e838409",
+      "bytes": 46038513,
+      "filas_observadas": 49843,
+      "columnas_observadas": 270,
+      "hoja": "Personas_ENEIC_T1-2026"
+    }
+  ]
+}

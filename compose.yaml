@@ -1,0 +1,12 @@
+services:
+  lab7:
+    build: .
+    container_name: lab7-eneic-spark
+    ports:
+      - "127.0.0.1:8889:8888"
+    volumes:
+      - .:/opt/app/Lab7DataScience
+    environment:
+      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      PYSPARK_PYTHON: /usr/local/bin/python
+      SPARK_LOCAL_IP: 127.0.0.1
