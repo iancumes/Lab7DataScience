@@ -18,11 +18,11 @@ def code(source: str) -> None:
 
 
 md("""
-# Laboratorio 7 — ENEIC: análisis exploratorio y segmentación
+# Laboratorio 7 — ENEIC: Spark MLlib
 
-**CC3066 Data Science · Avance de los incisos 1–4 · 24 de septiembre de 2026**
+**CC3066 Data Science · Entrega final · 27 de septiembre de 2026**
 
-Este cuaderno estudia observaciones de personas asalariadas de 15 años o más con salario mensual positivo registrado. Los cuatro archivos de 2025 constituyen el análisis; 2026T1 se prepara y conserva para la entrega final. Las cifras son **no ponderadas** y no representan estimaciones oficiales de Guatemala. El mismo individuo puede aportar observaciones en períodos distintos.
+Este cuaderno estudia observaciones de personas asalariadas de 15 años o más con salario mensual positivo registrado. Los cuatro archivos de 2025 se usan para exploración, segmentación, selección y entrenamiento; 2026T1 se mantiene aislado para la evaluación final. Las cifras son **no ponderadas** y no representan estimaciones oficiales de Guatemala. El mismo individuo puede aportar observaciones en períodos distintos.
 
 Fuente: [bases y diccionarios Personas ENEIC del INE](https://www.ine.gob.gt/encuesta-nacional-de-empleo-e-ingresos/). Procedencia y SHA-256 en `sources_manifest.json`. Ejecutar desde la primera celda en el contenedor del repositorio.
 """)
@@ -42,18 +42,21 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pyspark
+%matplotlib inline
 from pyspark.sql import SparkSession, functions as F
-from pyspark.ml import PipelineModel
+from pyspark.ml import Pipeline, PipelineModel
 from pyspark.ml.clustering import KMeans
-from pyspark.ml.evaluation import ClusteringEvaluator
-from pyspark.ml.feature import VectorAssembler, StandardScaler
+from pyspark.ml.evaluation import ClusteringEvaluator, RegressionEvaluator
+from pyspark.ml.feature import VectorAssembler, StandardScaler, StringIndexer, OneHotEncoder
+from pyspark.ml.regression import LinearRegression, RandomForestRegressor
 from pyspark.ml.stat import Correlation
 from scripts.analysis import (ROOT, SOURCE_COLUMNS, KEY, load_excel, dictionary_codes,
                               audit_duplicates, missingness, prepare, stats, group_salary)
 
-spark = (SparkSession.builder.master("local[4]").appName("Lab7-ENEIC-EDA-KMeans")
-         .config("spark.sql.shuffle.partitions", "8")
-         .config("spark.driver.memory", "4g")
+spark = (SparkSession.builder.master("local[2]").appName("Lab7-ENEIC-Spark-MLlib")
+         .config("spark.sql.shuffle.partitions", "4")
+         .config("spark.driver.memory", "3g")
+         .config("spark.ui.showConsoleProgress", "false")
          .config("spark.sql.execution.arrow.pyspark.enabled", "true")
          .getOrCreate())
 spark.sparkContext.setLogLevel("ERROR")
@@ -273,7 +276,6 @@ seeds = [42, 123, 2026]
 evaluator = ClusteringEvaluator(featuresCol="features_scaled", predictionCol="prediction",
                                 metricName="silhouette", distanceMeasure="squaredEuclidean")
 experiments = []
-fitted = {}
 variant_stages = {}
 for variant, columns in variants.items():
     assembler = VectorAssembler(inputCols=columns, outputCol="features_raw")
@@ -293,7 +295,6 @@ for variant, columns in variants.items():
             experiments.append({"variante": variant, "K": k, "semilla": seed,
                                 "silhouette": silhouette, "costo": cost,
                                 "tamano_minimo": min(sizes.values()), "tamanos": sizes})
-            fitted[(variant, k, seed)] = model
             print(variant, "K=", k, "semilla=", seed, "silhouette=", round(silhouette, 4), "tamaños=", sizes, flush=True)
     scaled.unpersist()
 experiments_df = pd.DataFrame(experiments)
@@ -322,7 +323,9 @@ code(r'''
 variant = "perfil_laboral"
 choice = chosen[variant]
 assembler, scaler_model = variant_stages[variant]
-best_model = fitted[(variant, choice["K"], choice["semilla"])]
+scaled_for_choice = scaler_model.transform(assembler.transform(train))
+best_model = KMeans(featuresCol="features_scaled", predictionCol="prediction",
+                    k=choice["K"], seed=choice["semilla"], maxIter=100, tol=1e-4).fit(scaled_for_choice)
 pipeline = PipelineModel(stages=[assembler, scaler_model, best_model])
 assignments = pipeline.transform(train).cache()
 assert assignments.count() == train_n
@@ -394,7 +397,10 @@ Comparamos las asignaciones de las dos variantes para los mismos registros, sin 
 code(r'''
 salary_choice = chosen["con_salario"]
 salary_assembler, salary_scaler = variant_stages["con_salario"]
-salary_model = fitted[("con_salario", salary_choice["K"], salary_choice["semilla"])]
+salary_scaled_for_choice = salary_scaler.transform(salary_assembler.transform(train))
+salary_model = KMeans(featuresCol="features_scaled", predictionCol="prediction",
+                      k=salary_choice["K"], seed=salary_choice["semilla"],
+                      maxIter=100, tol=1e-4).fit(salary_scaled_for_choice)
 salary_pipeline = PipelineModel(stages=[salary_assembler, salary_scaler, salary_model])
 salary_clusters = salary_pipeline.transform(train).cache()
 salary_clusters.count()
@@ -419,19 +425,375 @@ ax.set(title="Cruce de asignaciones · 2025", xlabel="Cluster con salario", ylab
 plt.tight_layout(); plt.show()
 display(Markdown(f"Tras alinear las etiquetas, **{agreement:.1%}** de las observaciones permanecen en el mismo grupo y **{1-agreement:.1%}** cambian. La variante con salario produce grupos de tamaño {', '.join(f'{int(x):,}' for x in salary_profile.n)}. Dado que el objetivo es describir perfiles de edad, antigüedad y jornada sin definirlos por el ingreso, se conserva la variante laboral como principal. El salario se reporta aparte para comparar los perfiles; su inclusión modifica los grupos en la proporción observada arriba."))
 _ = salary_clusters.unpersist()
+_ = assignments.unpersist()
+for frame in raws.values():
+    frame.unpersist()
+for period, frame in prepared.items():
+    if period != "2026T1":
+        frame.unpersist()
+del best_model, pipeline, salary_model, salary_pipeline, variant_stages
 ''')
 
 md("""
-## Síntesis del avance
+## 5. Pipeline de regresión lineal
 
-El notebook deja trazabilidad del origen, esquema, pérdida por filtros, distribuciones, correlaciones y selección de K. Las observaciones longitudinales no se convierten en individuos únicos. Los patrones de salario y clusters son asociaciones de registros elegibles, sin lectura causal o poblacional. La preparación 2026 queda almacenada para los incisos 5–8, pero no participa en resultados de este avance.
+La selección de hiperparámetros respeta el orden temporal indicado en la guía: **2025T1–T3** forman el conjunto de entrenamiento y **2025T4** es la validación. El primer trimestre de 2026 no interviene en esta selección. El referente es una predicción constante igual al salario promedio del conjunto de entrenamiento; por tanto, tampoco usa información de validación.
+
+Los tres predictores categóricos se ajustan con `StringIndexer` y `OneHotEncoder`; `handleInvalid="keep"` permite aplicar el pipeline a categorías nuevas sin volver a ajustarlo. Las variables numéricas son edad, antigüedad y horas semanales. `LinearRegression(standardization=True)` estandariza internamente para la penalización. Se conserva el salario original en quetzales, sin recortes ni transformaciones.
+""")
+code(r'''
+categorical_predictors = ["nivel_educativo", "categoria_ocupacional", "dominio"]
+numeric_predictors = ["edad", "antiguedad", "horas_semanales"]
+supervised_predictors = numeric_predictors + categorical_predictors
+
+development_2025 = train.filter(F.col("periodo_archivo").isin("2025T1", "2025T2", "2025T3")).cache()
+validation_2025 = train.filter(F.col("periodo_archivo") == "2025T4").cache()
+development_n, validation_n = development_2025.count(), validation_2025.count()
+assert development_n + validation_n == train_n
+assert set(development_2025.select("periodo_archivo").distinct().toPandas()["periodo_archivo"]) == {"2025T1", "2025T2", "2025T3"}
+assert set(validation_2025.select("periodo_archivo").distinct().toPandas()["periodo_archivo"]) == {"2025T4"}
+print("Entrenamiento 2025T1-T3:", development_n, "| Validación 2025T4:", validation_n,
+      "| Prueba reservada 2026T1:", test_n)
+
+def preprocessing_stages():
+    indexers = [StringIndexer(inputCol=c, outputCol=f"{c}_idx", handleInvalid="keep",
+                              stringOrderType="alphabetAsc") for c in categorical_predictors]
+    encoded = [f"{c}_ohe" for c in categorical_predictors]
+    encoder = OneHotEncoder(inputCols=[f"{c}_idx" for c in categorical_predictors],
+                            outputCols=encoded, handleInvalid="keep", dropLast=True)
+    assembler = VectorAssembler(inputCols=numeric_predictors + encoded, outputCol="features",
+                                handleInvalid="error")
+    return indexers + [encoder, assembler]
+
+def regression_metrics(predictions):
+    errors = predictions.select(
+        (F.col("salario_mensual") - F.col("prediction")).alias("residuo"))
+    row = errors.agg(F.avg(F.abs("residuo")).alias("MAE"),
+                     F.sqrt(F.avg(F.pow("residuo", 2))).alias("RMSE")).first()
+    r2 = RegressionEvaluator(labelCol="salario_mensual", predictionCol="prediction",
+                             metricName="r2").evaluate(predictions)
+    return {"MAE": float(row.MAE), "RMSE": float(row.RMSE), "R2": float(r2)}
+
+def constant_baseline(fit_frame, evaluation_frame):
+    value = float(fit_frame.agg(F.avg("salario_mensual").alias("media")).first().media)
+    predictions = evaluation_frame.withColumn("prediction", F.lit(value))
+    return value, regression_metrics(predictions)
+
+baseline_development_value, baseline_validation_metrics = constant_baseline(
+    development_2025, validation_2025)
+display(pd.DataFrame([{"modelo": "Referencia: media de entrenamiento",
+                       "configuracion": f"predicción constante Q{baseline_development_value:,.2f}",
+                       **baseline_validation_metrics}]).round(3))
+''')
+code(r'''
+linear_configs = [
+    {"nombre": "sin_regularizacion", "regParam": 0.0, "elasticNetParam": 0.0},
+    {"nombre": "ridge_1", "regParam": 1.0, "elasticNetParam": 0.0},
+    {"nombre": "ridge_10", "regParam": 10.0, "elasticNetParam": 0.0},
+    {"nombre": "elastic_net_10", "regParam": 10.0, "elasticNetParam": 0.5},
+]
+linear_results, linear_models = [], {}
+for config in linear_configs:
+    estimator = LinearRegression(
+        featuresCol="features", labelCol="salario_mensual", predictionCol="prediction",
+        regParam=config["regParam"], elasticNetParam=config["elasticNetParam"],
+        standardization=True, maxIter=200, tol=1e-6)
+    model = Pipeline(stages=preprocessing_stages() + [estimator]).fit(development_2025)
+    predictions = model.transform(validation_2025).cache()
+    assert predictions.count() == validation_n
+    metrics = regression_metrics(predictions)
+    linear_results.append({"modelo": "Regresión lineal", "configuracion": config["nombre"],
+                           "regParam": config["regParam"],
+                           "elasticNetParam": config["elasticNetParam"], **metrics})
+    linear_models[config["nombre"]] = model
+    predictions.unpersist()
+    print(config["nombre"], metrics, flush=True)
+
+linear_results_df = pd.DataFrame(linear_results).sort_values("RMSE").reset_index(drop=True)
+display(linear_results_df.round(3))
+best_linear_row = linear_results_df.iloc[0]
+best_linear_config = next(c for c in linear_configs if c["nombre"] == best_linear_row["configuracion"])
+best_linear_development = linear_models[best_linear_config["nombre"]]
+models_dir = ROOT / "artifacts" / "models"
+models_dir.mkdir(parents=True, exist_ok=True)
+best_linear_development.write().overwrite().save(str(models_dir / "linear_validacion_2025"))
+improvement_linear = 100 * (baseline_validation_metrics["RMSE"] - best_linear_row["RMSE"]) / baseline_validation_metrics["RMSE"]
+display(Markdown(
+    f"La configuración seleccionada es **{best_linear_config['nombre']}** "
+    f"(`regParam={best_linear_config['regParam']}`, `elasticNetParam={best_linear_config['elasticNetParam']}`), "
+    f"con RMSE de validación **Q{best_linear_row['RMSE']:,.2f}**, MAE **Q{best_linear_row['MAE']:,.2f}** "
+    f"y R² **{best_linear_row['R2']:.3f}**. Su RMSE es {abs(improvement_linear):.1f}% "
+    f"{'menor' if improvement_linear >= 0 else 'mayor'} que el referente constante. "
+    "La configuración se eligió únicamente por el menor RMSE de 2025T4."))
+del linear_models, best_linear_development
+''')
+
+md("""
+## 6. Pipeline de Random Forest
+
+Se reutilizan exactamente los mismos conjuntos de entrenamiento y validación. Aunque los árboles no requieren estandarización, el pipeline incluye la codificación categórica exigida. Se comparan dos combinaciones de cantidad de árboles y profundidad, ambas con semilla fija. Todos los `StringIndexer`, el `OneHotEncoder` y el estimador se ajustan solo con 2025T1–T3.
+""")
+code(r'''
+rf_configs = [
+    {"nombre": "rf_40_d7", "numTrees": 40, "maxDepth": 7},
+    {"nombre": "rf_80_d10", "numTrees": 80, "maxDepth": 10},
+]
+rf_results, rf_models = [], {}
+for config in rf_configs:
+    estimator = RandomForestRegressor(
+        featuresCol="features", labelCol="salario_mensual", predictionCol="prediction",
+        numTrees=config["numTrees"], maxDepth=config["maxDepth"], seed=42,
+        minInstancesPerNode=5, subsamplingRate=0.8, featureSubsetStrategy="auto")
+    model = Pipeline(stages=preprocessing_stages() + [estimator]).fit(development_2025)
+    predictions = model.transform(validation_2025).cache()
+    assert predictions.count() == validation_n
+    metrics = regression_metrics(predictions)
+    rf_results.append({"modelo": "Random Forest", "configuracion": config["nombre"],
+                       "numTrees": config["numTrees"], "maxDepth": config["maxDepth"],
+                       "semilla": 42, **metrics})
+    rf_models[config["nombre"]] = model
+    predictions.unpersist()
+    print(config["nombre"], metrics, flush=True)
+
+rf_results_df = pd.DataFrame(rf_results).sort_values("RMSE").reset_index(drop=True)
+display(rf_results_df.round(3))
+best_rf_row = rf_results_df.iloc[0]
+best_rf_config = next(c for c in rf_configs if c["nombre"] == best_rf_row["configuracion"])
+best_rf_development = rf_models[best_rf_config["nombre"]]
+best_rf_development.write().overwrite().save(str(models_dir / "random_forest_validacion_2025"))
+improvement_rf = 100 * (baseline_validation_metrics["RMSE"] - best_rf_row["RMSE"]) / baseline_validation_metrics["RMSE"]
+display(Markdown(
+    f"La configuración seleccionada es **{best_rf_config['nombre']}** "
+    f"({best_rf_config['numTrees']} árboles, profundidad máxima {best_rf_config['maxDepth']}, semilla 42), "
+    f"con RMSE **Q{best_rf_row['RMSE']:,.2f}**, MAE **Q{best_rf_row['MAE']:,.2f}** y "
+    f"R² **{best_rf_row['R2']:.3f}**. Su RMSE es {abs(improvement_rf):.1f}% "
+    f"{'menor' if improvement_rf >= 0 else 'mayor'} que el referente constante."))
+del rf_models, best_rf_development
+''')
+code(r'''
+validation_comparison = pd.DataFrame([
+    {"modelo": "Referencia", "configuracion": f"media Q{baseline_development_value:,.2f}",
+     **baseline_validation_metrics},
+    {"modelo": "Regresión lineal", "configuracion": best_linear_config["nombre"],
+     "MAE": float(best_linear_row.MAE), "RMSE": float(best_linear_row.RMSE), "R2": float(best_linear_row.R2)},
+    {"modelo": "Random Forest", "configuracion": best_rf_config["nombre"],
+     "MAE": float(best_rf_row.MAE), "RMSE": float(best_rf_row.RMSE), "R2": float(best_rf_row.R2)},
+]).sort_values("RMSE")
+display(validation_comparison.round(3))
+best_validation = validation_comparison.loc[validation_comparison.modelo != "Referencia"].sort_values("RMSE").iloc[0]
+other_validation = validation_comparison.loc[
+    (validation_comparison.modelo != "Referencia") &
+    (validation_comparison.modelo != best_validation.modelo)].iloc[0]
+explanation = ("puede representar relaciones no lineales e interacciones entre edad, antigüedad, jornada y categorías"
+               if best_validation.modelo == "Random Forest" else
+               "su estructura aditiva parece generalizar mejor en este corte y evita parte de la varianza del bosque")
+display(Markdown(
+    f"En 2025T4, **{best_validation.modelo}** obtiene el menor RMSE de los dos algoritmos "
+    f"(Q{best_validation.RMSE:,.2f} frente a Q{other_validation.RMSE:,.2f}). Esto es compatible con que {explanation}. "
+    "La comparación es predictiva y no implica que los coeficientes, importancias o asociaciones sean causales."))
+''')
+
+md("""
+## 7. Entrenamiento final y evaluación en 2026
+
+Después de congelar una configuración por algoritmo, cada pipeline se vuelve a ajustar con **los cuatro trimestres de 2025**. Solo entonces se transforma 2026T1. Ambos modelos se evalúan sobre las mismas observaciones elegibles y con MAE, RMSE y R². El referente final se recalcula con la media de 2025, sin mirar los salarios de 2026.
+""")
+code(r'''
+selected_linear_estimator = LinearRegression(
+    featuresCol="features", labelCol="salario_mensual", predictionCol="prediction",
+    regParam=best_linear_config["regParam"], elasticNetParam=best_linear_config["elasticNetParam"],
+    standardization=True, maxIter=200, tol=1e-6)
+selected_rf_estimator = RandomForestRegressor(
+    featuresCol="features", labelCol="salario_mensual", predictionCol="prediction",
+    numTrees=best_rf_config["numTrees"], maxDepth=best_rf_config["maxDepth"], seed=42,
+    minInstancesPerNode=5, subsamplingRate=0.8, featureSubsetStrategy="auto")
+
+linear_final_model = Pipeline(stages=preprocessing_stages() + [selected_linear_estimator]).fit(train)
+rf_final_model = Pipeline(stages=preprocessing_stages() + [selected_rf_estimator]).fit(train)
+linear_final_model.write().overwrite().save(str(models_dir / "linear_final_2025"))
+rf_final_model.write().overwrite().save(str(models_dir / "random_forest_final_2025"))
+
+linear_test_predictions = linear_final_model.transform(test_2026).cache()
+rf_test_predictions = rf_final_model.transform(test_2026).cache()
+assert linear_test_predictions.count() == test_n == rf_test_predictions.count()
+baseline_final_value, baseline_test_metrics = constant_baseline(train, test_2026)
+linear_test_metrics = regression_metrics(linear_test_predictions)
+rf_test_metrics = regression_metrics(rf_test_predictions)
+test_comparison = pd.DataFrame([
+    {"modelo": "Referencia", "configuracion": f"media 2025 = Q{baseline_final_value:,.2f}", **baseline_test_metrics},
+    {"modelo": "Regresión lineal", "configuracion": best_linear_config["nombre"], **linear_test_metrics},
+    {"modelo": "Random Forest", "configuracion": best_rf_config["nombre"], **rf_test_metrics},
+]).sort_values("RMSE").reset_index(drop=True)
+display(test_comparison.round(3))
+
+best_test = test_comparison.loc[test_comparison.modelo != "Referencia"].sort_values("RMSE").iloc[0]
+baseline_test_row = test_comparison.loc[test_comparison.modelo == "Referencia"].iloc[0]
+test_gain = 100 * (baseline_test_row.RMSE - best_test.RMSE) / baseline_test_row.RMSE
+display(Markdown(
+    f"En la prueba final de **{test_n:,}** registros de 2026T1, **{best_test.modelo}** logra el menor RMSE "
+    f"entre los dos algoritmos: **Q{best_test.RMSE:,.2f}**, con MAE **Q{best_test.MAE:,.2f}** y "
+    f"R² **{best_test.R2:.3f}**. El cambio de RMSE frente al referente es {abs(test_gain):.1f}% "
+    f"{'menor' if test_gain >= 0 else 'mayor'}. Esta es la única evaluación usada para reportar desempeño final."))
+
+metrics_artifact = {
+    "particiones": {"entrenamiento_2025T1_T3": development_n, "validacion_2025T4": validation_n,
+                    "entrenamiento_final_2025": train_n, "prueba_2026T1": test_n},
+    "seleccion": {"regresion_lineal": best_linear_config, "random_forest": {**best_rf_config, "seed": 42}},
+    "validacion_2025T4": validation_comparison.to_dict(orient="records"),
+    "prueba_2026T1": test_comparison.to_dict(orient="records"),
+    "residuo": "salario_mensual - prediction; positivo = subestimacion",
+}
+_ = (ROOT / "artifacts" / "supervised_metrics.json").write_text(
+    json.dumps(metrics_artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+''')
+
+md("""
+## 8. Visualización y análisis de errores
+
+Se define `residuo = salario_mensual - prediction`: un valor positivo indica subestimación y uno negativo, sobreestimación. Los gráficos de ambos modelos usan la **misma muestra determinística de hasta 5,000 registros** de 2026T1. Las tablas por educación, dominio y percentil se calculan con la prueba completa, no con la muestra.
+""")
+code(r'''
+sample_columns = KEY + supervised_predictors + ["salario_mensual"]
+sample_order = F.sha2(F.concat_ws("||", *[F.coalesce(F.col(c).cast("string"), F.lit("<NULL>"))
+                                           for c in sample_columns]), 256)
+visual_sample = test_2026.orderBy(sample_order).limit(5000).cache()
+visual_n = visual_sample.count()
+linear_visual = (linear_final_model.transform(visual_sample)
+                 .select("salario_mensual", "prediction").toPandas())
+rf_visual = (rf_final_model.transform(visual_sample)
+             .select("salario_mensual", "prediction").toPandas())
+assert len(linear_visual) == visual_n == len(rf_visual) <= 5000
+for frame in [linear_visual, rf_visual]:
+    frame["residuo"] = frame["salario_mensual"] - frame["prediction"]
+
+joint_min = min(0.0, linear_visual[["salario_mensual", "prediction"]].to_numpy().min(),
+                rf_visual[["salario_mensual", "prediction"]].to_numpy().min())
+joint_max = max(linear_visual[["salario_mensual", "prediction"]].to_numpy().max(),
+                rf_visual[["salario_mensual", "prediction"]].to_numpy().max())
+fig, axes = plt.subplots(1, 2, figsize=(13, 5.1), sharex=True, sharey=True)
+for ax, frame, title in [(axes[0], linear_visual, "Regresión lineal"),
+                         (axes[1], rf_visual, "Random Forest")]:
+    ax.scatter(frame["salario_mensual"], frame["prediction"], alpha=0.25, s=14, color="#2374ab")
+    ax.plot([joint_min, joint_max], [joint_min, joint_max], "--", color="#d95f02", linewidth=1.5)
+    ax.set(title=title, xlabel="Salario real (Q)", ylabel="Salario predicho (Q)",
+           xlim=(joint_min, joint_max), ylim=(joint_min, joint_max))
+fig.suptitle(f"Salario real frente a predicho · misma muestra 2026T1 (n={visual_n:,})")
+plt.tight_layout(); plt.show()
+''')
+code(r'''
+fig, axes = plt.subplots(1, 2, figsize=(13, 5.1), sharey=True)
+for ax, frame, title in [(axes[0], linear_visual, "Regresión lineal"),
+                         (axes[1], rf_visual, "Random Forest")]:
+    ax.scatter(frame["prediction"], frame["residuo"], alpha=0.25, s=14, color="#2a9d8f")
+    ax.axhline(0, linestyle="--", color="#d95f02", linewidth=1.5)
+    ax.set(title=title, xlabel="Salario predicho (Q)", ylabel="Residuo: real - predicho (Q)")
+fig.suptitle(f"Residuos frente a predicción · misma muestra 2026T1 (n={visual_n:,})")
+plt.tight_layout(); plt.show()
+''')
+code(r'''
+def grouped_errors(predictions, group, model_name):
+    return (predictions.withColumn("residuo", F.col("salario_mensual") - F.col("prediction"))
+            .groupBy(group)
+            .agg(F.count("*").alias("n"),
+                 F.avg(F.abs("residuo")).alias("MAE"),
+                 F.avg("residuo").alias("error_medio"))
+            .withColumn("modelo", F.lit(model_name))
+            .select("modelo", group, "n", "MAE", "error_medio")
+            .orderBy("modelo", group).toPandas())
+
+group_error_tables = {}
+for group in ["nivel_educativo", "dominio"]:
+    table = pd.concat([
+        grouped_errors(linear_test_predictions, group, "Regresión lineal"),
+        grouped_errors(rf_test_predictions, group, "Random Forest")
+    ], ignore_index=True)
+    group_error_tables[group] = table
+    assert all(table.groupby("modelo")["n"].sum() == test_n)
+    display(Markdown(f"### Error por {group.replace('_', ' ')} · prueba completa 2026T1"))
+    display(table.round(2))
+''')
+code(r'''
+percentile_values = test_2026.agg(
+    F.expr("percentile_approx(salario_mensual, array(0.5, 0.75, 0.9, 0.95), 10000)").alias("p")
+).first().p
+p50, p75, p90, p95 = [float(x) for x in percentile_values]
+
+def add_salary_band(frame):
+    return frame.withColumn(
+        "percentil_salario",
+        F.when(F.col("salario_mensual") <= p50, "P00-P50")
+         .when(F.col("salario_mensual") <= p75, "P50-P75")
+         .when(F.col("salario_mensual") <= p90, "P75-P90")
+         .when(F.col("salario_mensual") <= p95, "P90-P95")
+         .otherwise("P95-P100"))
+
+percentile_errors = pd.concat([
+    grouped_errors(add_salary_band(linear_test_predictions), "percentil_salario", "Regresión lineal"),
+    grouped_errors(add_salary_band(rf_test_predictions), "percentil_salario", "Random Forest")
+], ignore_index=True)
+assert all(percentile_errors.groupby("modelo")["n"].sum() == test_n)
+display(pd.DataFrame({"percentil": ["P50", "P75", "P90", "P95"],
+                      "salario_mensual_Q": [p50, p75, p90, p95]}).round(2))
+display(percentile_errors.round(2))
+
+test_salary_summary = stats(test_2026, "salario_mensual")
+tail = percentile_errors.loc[percentile_errors.percentil_salario == "P95-P100"].set_index("modelo")
+def bias_text(value):
+    if abs(value) < 1e-9:
+        return "sin sesgo medio"
+    return "subestimación" if value > 0 else "sobreestimación"
+display(Markdown(
+    f"En 2026T1 la media salarial es **Q{test_salary_summary['media']:,.2f}** y la mediana "
+    f"**Q{test_salary_summary['mediana']:,.2f}**; su diferencia y el máximo de "
+    f"**Q{test_salary_summary['maximo']:,.2f}** confirman una cola derecha. Por encima de P95 "
+    f"(Q{p95:,.2f}), la regresión lineal tiene error medio **Q{tail.loc['Regresión lineal','error_medio']:,.2f}** "
+    f"({bias_text(tail.loc['Regresión lineal','error_medio'])}) y Random Forest **Q{tail.loc['Random Forest','error_medio']:,.2f}** "
+    f"({bias_text(tail.loc['Random Forest','error_medio'])}). El crecimiento del MAE en los percentiles altos muestra "
+    "la influencia de la cola salarial: con pérdida cuadrática, pocos errores grandes pueden dominar el RMSE. "
+    "Los extremos se conservaron tal como exige la actividad."))
+''')
+
+md("""
+## Discusión final
+
+Los resultados deben leerse como desempeño sobre **registros elegibles no ponderados**, no como una estimación oficial de salarios ni como una recomendación salarial. Las diferencias por educación, ocupación, dominio o cluster son asociaciones descriptivas; no controlan todas las variables relevantes y no prueban causalidad. La rotación longitudinal significa que las filas tampoco equivalen a personas únicas.
+""")
+code(r'''
+validation_winner = validation_comparison.loc[validation_comparison.modelo != "Referencia"].sort_values("RMSE").iloc[0]
+test_winner = test_comparison.loc[test_comparison.modelo != "Referencia"].sort_values("RMSE").iloc[0]
+same_winner = validation_winner.modelo == test_winner.modelo
+display(Markdown(
+    f"La exploración encontró un salario asimétrico y perfiles laborales diferenciados por edad, antigüedad y jornada. "
+    f"En validación ganó **{validation_winner.modelo}** (RMSE Q{validation_winner.RMSE:,.2f}); en la prueba 2026 ganó "
+    f"**{test_winner.modelo}** (RMSE Q{test_winner.RMSE:,.2f}). "
+    f"{'La coincidencia del algoritmo ganador entre validación y prueba aporta estabilidad a la selección.' if same_winner else 'El cambio de algoritmo ganador muestra que la comparación es sensible al período y debe reportarse sin escoger de nuevo con 2026.'} "
+    f"Aun para el mejor modelo final, R²={test_winner.R2:.3f}: las seis variables observadas explican solo parte de la "
+    "variación salarial. Los errores por grupo y percentil muestran que un promedio global puede ocultar diferencias "
+    "importantes, especialmente en la cola alta. `FACTOR` se conserva para un análisis poblacional posterior que respete "
+    "el diseño muestral, pero no se utilizó como predictor ni como ponderador en esta comparación obligatoria."))
+''')
+
+md("""
+## Validaciones de integridad y reproducibilidad
+
+Las comprobaciones siguientes verifican las particiones temporales, la cobertura de los experimentos, el tamaño común de prueba, la muestra gráfica y la persistencia de modelos y métricas. Una ejecución limpia debe llegar a esta celda sin depender de estado manual previo.
 """)
 code(r'''
 assert train_n > 0 and test_n > 0
 assert all(len(experiments_df.loc[experiments_df.variante == v]) == 12 for v in variants)
+assert len(linear_results_df) >= 2 and len(rf_results_df) >= 2
 assert set(train.select("periodo_archivo").distinct().toPandas()["periodo_archivo"]) == set(periodos[:4])
 assert set(test_2026.select("periodo_archivo").distinct().toPandas()["periodo_archivo"]) == {"2026T1"}
-print("Validaciones finales superadas. Registros 2025:", train_n, "; registros 2026T1:", test_n)
+assert linear_test_predictions.select(*supervised_predictors, "salario_mensual").count() == test_n
+assert rf_test_predictions.select(*supervised_predictors, "salario_mensual").count() == test_n
+assert visual_n <= 5000
+for path in [models_dir / "linear_validacion_2025", models_dir / "random_forest_validacion_2025",
+             models_dir / "linear_final_2025", models_dir / "random_forest_final_2025",
+             ROOT / "artifacts" / "supervised_metrics.json"]:
+    assert path.exists(), path
+print("Validaciones finales superadas. Registros 2025:", train_n,
+      "| registros 2026T1:", test_n, "| muestra visual común:", visual_n)
+spark.stop()
 ''')
 
 nb["cells"] = cells
