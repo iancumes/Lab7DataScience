@@ -7,6 +7,6 @@ services:
     volumes:
       - .:/opt/app/Lab7DataScience
     environment:
-      JAVA_HOME: /usr/lib/jvm/java-17-openjdk-amd64
+      JAVA_HOME: /usr
       PYSPARK_PYTHON: /usr/local/bin/python
       SPARK_LOCAL_IP: 127.0.0.1

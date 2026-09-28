@@ -4,9 +4,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-17-jdk-headless ca-certificates tini && \
     rm -rf /var/lib/apt/lists/*
 
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+ENV JAVA_HOME=/usr \
     PYSPARK_PYTHON=/usr/local/bin/python \
-    PATH=/usr/lib/jvm/java-17-openjdk-amd64/bin:$PATH
+    PATH=/usr/bin:$PATH
 
 WORKDIR /opt/app/Lab7DataScience
 RUN pip install --no-cache-dir \
